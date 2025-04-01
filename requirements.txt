@@ -1,0 +1,4 @@
+gymnasium
+highway-env
+numpy
+
