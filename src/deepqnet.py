@@ -1,14 +1,17 @@
 from collections import namedtuple
 import gymnasium as gym
 import highway_env
-import torch.functional as F
+import numpy as np
+import random
+import torch
+import torch.nn.functional as F
 import torch.nn as nn
 import torch.optim as optim
 
 
 Transition = namedtuple(
     'Transition',
-    ('state', 'action', 'reward', 'terminated', 'next_step')
+    ('state', 'action', 'reward', 'terminated', 'next_state')
 )
 
 
@@ -61,7 +64,31 @@ class BaseNetwork(nn.Module):
         return self.layer3(x)
 
 
+class ConvNetwork(nn.Module):
+    def __init__(self, n_actions: int):
+        super(ConvNetwork, self).__init__()
+        # input shape: [B, 7, 8, 8]
+        self.conv1 = nn.Conv2d(in_channels=7, out_channels=32, kernel_size=3, stride=1)
+        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=1)
+        
+        # After two 3×3 convolutions (with stride=1) on an 8×8, you end up with a 6×6.
+        # So the output of conv2 is shape [B, 64, 6, 6] = 2304 features per sample.
+        
+        self.fc1 = nn.Linear(64 * 4 * 4, 128)
+        self.fc2 = nn.Linear(128, n_actions)
 
+    def forward(self, x):
+        # x shape: [B, 7, 8, 8]
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        
+        # Flatten
+        #print(x.shape)
+        x = x.view(x.size(0), -1)  # shape [B, 64*6*6]
+        #print(x.shape)
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return x
 
 class DQN:
     def __init__(
@@ -100,7 +127,7 @@ class DQN:
         sample = random.random()
 
         if sample > self.epsilon:
-            action = self.get_q(state)
+            action = self.q_net(state).max(1).indices.view(1, 1)
         else:
             action = torch.tensor(
                 [[self.action_space.sample()]], device=device, dtype=torch.long
@@ -129,7 +156,7 @@ class DQN:
         )
 
         non_final_next_states = torch.cat(
-             [s for s in batch.next_state if s is not None]
+             [torch.tensor(s, dtype=torch.float32, device=device) for s in batch.next_state if s is not None]
         )
 
         state_batch = torch.cat(batch.state)
@@ -155,7 +182,7 @@ class DQN:
         if not self.n_steps % self.update_target_every:
             self.target_net.load_state_dict(self.q_net.state_dict())
 
-        return loss
+        return loss.item()
 
     def get_q(self, state):
         """
@@ -171,14 +198,12 @@ class DQN:
                         np.exp(-1. * self.n_eps / self.decrease_epsilon_factor ) )
 
     def reset(self):
-        hidden_size = 128
-
         obs_size = self.observation_space.shape[0]
         n_actions = self.action_space.n
 
         self.buffer = ReplayBuffer(self.buffer_capacity)
-        self.q_net =  BaseNetwork(obs_size, hidden_size, n_actions)
-        self.target_net = BaseNetwork(obs_size, hidden_size, n_actions)
+        self.q_net =  ConvNetwork(n_actions)
+        self.target_net = ConvNetwork(n_actions)
 
         self.loss_function = nn.SmoothL1Loss()
         self.optimizer = optim.Adam(params=self.q_net.parameters(), lr=self.learning_rate)
@@ -196,7 +221,7 @@ if __name__ == '__main__':
     observation_space = env.observation_space
 
     gamma = 0.99
-    batch_size = 12
+    batch_size = 1
     buffer_capacity = 10_000
     update_target_every = 32
 
@@ -221,3 +246,4 @@ if __name__ == '__main__':
 
     agent = DQN(*arguments)
     print(agent.q_net)
+
