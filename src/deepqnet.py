@@ -65,30 +65,67 @@ class BaseNetwork(nn.Module):
 
 
 class ConvNetwork(nn.Module):
-    def __init__(self, n_actions: int):
-        super(ConvNetwork, self).__init__()
-        # input shape: [B, 7, 8, 8]
-        self.conv1 = nn.Conv2d(in_channels=7, out_channels=32, kernel_size=3, stride=1)
-        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=1)
-        
-        # After two 3×3 convolutions (with stride=1) on an 8×8, you end up with a 6×6.
-        # So the output of conv2 is shape [B, 64, 6, 6] = 2304 features per sample.
-        
-        self.fc1 = nn.Linear(64 * 4 * 4, 128)
-        self.fc2 = nn.Linear(128, n_actions)
+    def __init__(self, n_actions):
+        super().__init__()
+        # in: [B, 7, 8, 8]
+        self.conv1 = nn.Conv2d(7, 32, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
+        self.conv4 = nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1)
+        self.conv5 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1)
+
+        # output shape after conv3 still [B, 64, 8, 8] if we use padding=1
+
+        self.fc1 = nn.Linear(256 * 8 * 8, 512)
+        self.fc2 = nn.Linear(512, n_actions)
 
     def forward(self, x):
-        # x shape: [B, 7, 8, 8]
+        # x: [B, 7, 8, 8]
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
-        
-        # Flatten
-        #print(x.shape)
-        x = x.view(x.size(0), -1)  # shape [B, 64*6*6]
-        #print(x.shape)
+        x = F.relu(self.conv3(x))
+        x = F.relu(self.conv4(x))
+        x = F.relu(self.conv5(x))
+        x = x.view(x.size(0), -1)  # flatten: [B, 64*8*8]
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
         return x
+
+
+class DuelingConvDQN(nn.Module):
+    def __init__(self, n_actions):
+        super().__init__()
+        # Convolutional feature extractor
+        self.conv1 = nn.Conv2d(7, 32, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
+        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
+
+        # Fully-connected layers for the shared feature map
+        self.fc_hidden = 256  # size of your hidden dimension
+        self.fc = nn.Linear(64 * 8 * 8, self.fc_hidden)
+
+        # Dueling streams
+        self.value_stream = nn.Linear(self.fc_hidden, 1)
+        self.advantage_stream = nn.Linear(self.fc_hidden, n_actions)
+
+    def forward(self, x):
+        # Convolutional feature extraction
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = F.relu(self.conv3(x))
+
+        # Flatten
+        x = x.view(x.size(0), -1)
+        x = F.relu(self.fc(x))
+
+        # Dueling architecture
+        value = self.value_stream(x)
+        advantage = self.advantage_stream(x)
+
+        # Q-values: Q = Value + (Advantage - mean(Advantage, dim=1, keepdim=True))
+        advantage_mean = advantage.mean(dim=1, keepdim=True)
+        q_values = value + (advantage - advantage_mean)
+        return q_values
 
 class DQN:
     def __init__(
@@ -133,9 +170,6 @@ class DQN:
                 [[self.action_space.sample()]], device=device, dtype=torch.long
             )
 
-        self.n_steps += 1
-        self.decrease_epsilon()
-
         return action
 
     def update(self, *data, device):
@@ -156,12 +190,16 @@ class DQN:
         )
 
         non_final_next_states = torch.cat(
-             [torch.tensor(s, dtype=torch.float32, device=device) for s in batch.next_state if s is not None]
+             [torch.tensor(s, dtype=torch.float32, device=device).unsqueeze(0) for s in batch.next_state if s is not None]
         )
 
-        state_batch = torch.cat(batch.state)
+        state_batch = torch.cat(
+            [torch.tensor(s, dtype=torch.float32, device=device).unsqueeze(0) for s in batch.state]
+        )
         action_batch = torch.cat(batch.action)
-        reward_batch = torch.cat(batch.reward)
+        reward_batch = torch.cat(
+            [torch.tensor(r, dtype=torch.float32, device=device).unsqueeze(0) for r in batch.reward]
+        )
 
         state_action_values = self.q_net(state_batch).gather(1, action_batch)
 
@@ -177,9 +215,12 @@ class DQN:
 
         self.optimizer.zero_grad()
         loss.backward()
+
+        torch.nn.utils.clip_grad_value_(self.q_net.parameters(), 100)
         self.optimizer.step()
 
-        if not self.n_steps % self.update_target_every:
+        
+        if not (self.n_eps + 1) % self.update_target_every:
             self.target_net.load_state_dict(self.q_net.state_dict())
 
         return loss.item()
@@ -202,10 +243,10 @@ class DQN:
         n_actions = self.action_space.n
 
         self.buffer = ReplayBuffer(self.buffer_capacity)
-        self.q_net =  ConvNetwork(n_actions)
-        self.target_net = ConvNetwork(n_actions)
+        self.q_net =  DuelingConvDQN(n_actions)
+        self.target_net = DuelingConvDQN(n_actions)
 
-        self.loss_function = nn.SmoothL1Loss()
+        self.loss_function = nn.MSELoss()
         self.optimizer = optim.Adam(params=self.q_net.parameters(), lr=self.learning_rate)
 
         self.epsilon = self.epsilon_start

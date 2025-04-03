@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 
 if __name__ == '__main__':
-    env = make_env('../config/base_config.pkl')
+    env = make_env('./base_config.pkl')
 
     action_space = env.action_space
     observation_space = env.observation_space
@@ -36,7 +36,7 @@ if __name__ == '__main__':
 
     agent = DQN(*arguments)
     agent.q_net.to('cuda')
-
+    agent.target_net.to('cuda')
     output = train(env, agent, 10, 'cuda')
     print(output['losses'])
     plt.plot(output['losses'])
