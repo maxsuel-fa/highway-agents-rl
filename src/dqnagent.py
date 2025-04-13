@@ -4,6 +4,7 @@ from networks import ConvNetwork
 from copy import deepcopy
 import itertools
 import numpy as np
+import os
 import random
 import torch
 import torch.nn as nn
@@ -150,6 +151,11 @@ class DQN:
                 print(self.eval(train_arguments['eval_n_simulations'], train_arguments['eval_display']))
                 self.q_net.train()
 
+            if (train_arguments['save_every']
+                and not self.n_eps % train_arguments['save_every']):
+                self.save(train_arguments['save_dir'], self.n_eps)
+
+
 
     def eval(self, n_simulations, display=False):
         """
@@ -202,11 +208,11 @@ class DQN:
         self.buffer = ReplayBuffer(self.buffer_capacity)
         self.buffer.initialize(self.env)
 
-        self.q_net =  ConvNetwork(obs_size, n_actions)
-        self.target_net = ConvNetwork(obs_size, n_actions)
+        self.q_net =  ConvNetwork(obs_size, n_actions).to(self.device)
+        self.target_net = ConvNetwork(obs_size, n_actions).to(self.device)
         self.target_net.load_state_dict(self.q_net.state_dict())
 
-        self.loss_function = nn.SmoothL1Loss()
+        self.loss_function = nn.SmoothL1Loss().to(self.device)
         self.optimizer = optim.Adam(params=self.q_net.parameters(), lr=self.learning_rate)
 
         self.epsilon = self.epsilon_start
@@ -214,4 +220,50 @@ class DQN:
         self.n_eps = 0
 
         self.train_results = {}
+
+    
+    def save(
+        self,
+        save_dir,
+        epoch = 'latest'
+    ):
+        """
+        TODO
+        """
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        save_path = 'weights_epoch' + str(epoch) + '.pt'
+        save_path = os.path.join(save_dir, save_path)
+
+        torch.save(
+            {
+                'q_net_state_dict': self.q_net.state_dict(),
+                'target_state_dict': self.target_net.state_dict(),
+                'optimizer_state_dict': self.optimizer.state_dict(),
+                'replay_buff_mem': self.buffer.memory
+            },
+            save_path
+        )
+
+    
+    def load(
+        self,
+        checkpoint_dir,
+        epoch = 'latest',
+        is_train = False
+    ):
+        """
+        TODO
+        """
+        cp_path = os.path.join(checkpoint_dir, 'weights_epoch' + str(epoch) + '.pt')
+        checkpoint = torch.load(cp_path)
+
+        self.q_net.load_state_dict(checkpoint['q_net_state_dict'])
+        
+        if is_train:
+            self.target_net.load_state_dict(checkpoint['target_state_dict'])
+            self.buffer.memory = checkpoint['replay_buff_mem']
+
+
 
