@@ -30,11 +30,11 @@ agent = DQN(
 )
 
 train_args = {
-    'n_episodes': 1,
+    'n_episodes': 40000,
     'eval_every': 1,
     'eval_n_simulations': 1,
-    'eval_display': True,
-    'save_every': 1,
+    'eval_display': False,
+    'save_every': 100,
     'save_dir': './weights'
 }
 
