@@ -1,3 +1,14 @@
+from memory import ReplayBuffer
+from networks import ConvNetwork
+
+from copy import deepcopy
+import itertools
+import numpy as np
+import random
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from typing import Dict
 
 class DQN:
     def __init__(
@@ -57,7 +68,7 @@ class DQN:
         transition_batch = self.buffer.sample(self.batch_size)
 
         state_batch = torch.as_tensor( 
-            np.asarray([[transition.state] for transition in transition_batch]),
+            np.asarray([transition.state for transition in transition_batch]),
             dtype=torch.float32, device=self.device
         ) 
         
@@ -66,13 +77,13 @@ class DQN:
             dtype=torch.int64, device=self.device
         )
         
-        reward_batch  torch.as_tensor( 
+        reward_batch = torch.as_tensor( 
             np.asarray([[transition.reward] for transition in transition_batch]),
             dtype=torch.float32, device=self.device
         )
         
         next_state_batch = torch.as_tensor( 
-            np.asarray([[transition.next_state] for transition in transition_batch]),
+            np.asarray([transition.next_state for transition in transition_batch]),
             dtype=torch.float32, device=self.device
         )
 
@@ -92,11 +103,11 @@ class DQN:
         loss = self.loss_function(action_q_values, target)
 
         self.optimizer.zero_grad()
-        self.optimizer.backward()
+        loss.backward()
         self.optimizer.step()
 
         self.n_steps += 1
-        self.decrease_epsilon_factor()
+        self.decrease_epsilon()
 
         if not self.n_steps % self.update_target_every:
             self.target_net.load_state_dict(self.q_net.state_dict())
@@ -113,7 +124,7 @@ class DQN:
             state, _ = self.env.reset()
             episode_reward = 0.0
 
-            for t in collections.count():
+            for t in itertools.count():
                 action = self.get_action(state)
                 next_state, reward, terminated, truncated, _ = self.env.step(action)
 
@@ -134,8 +145,10 @@ class DQN:
 
             if (train_arguments['eval_every'] 
                 and not self.n_eps % train_arguments['eval_every']):
+                self.q_net.eval()
                 # TODO: change the print to some kind of plot
                 print(self.eval(train_arguments['eval_n_simulations'], train_arguments['eval_display']))
+                self.q_net.train()
 
 
     def eval(self, n_simulations, display=False):
@@ -145,13 +158,11 @@ class DQN:
         eval_env = deepcopy(self.env)
         eval_rewards = []
 
-        self.q_net.eval()
-
         for simulation in range(n_simulations):
             state, _ = eval_env.reset()
             sim_reward = 0.0
 
-            for t in collections.count():
+            for t in itertools.count():
                 action = self.get_action(state, is_eval=True)
                 state, reward, terminated, truncated, _ = eval_env.step(action)
                 sim_reward += reward
@@ -166,6 +177,7 @@ class DQN:
 
         return eval_rewards
 
+
     def get_q(self, state):
         """
         Compute Q function for a states
@@ -175,9 +187,11 @@ class DQN:
             output = self.q_net.forward(state_tensor) # shape (1,  n_actions)
         return output.numpy()[0]  # shape  (n_actions)
 
+
     def decrease_epsilon(self):
         self.epsilon = np.interp(
-            self.n_steps, [0, self.decrease_epsilon], [self.epsilon_start, self.epsilon_min]
+            self.n_steps, [0, self.decrease_epsilon_factor], 
+            [self.epsilon_start, self.epsilon_min]
         )
 
 
@@ -188,8 +202,8 @@ class DQN:
         self.buffer = ReplayBuffer(self.buffer_capacity)
         self.buffer.initialize(self.env)
 
-        self.q_net =  DuelingConvDQN(n_actions)
-        self.target_net = DuelingConvDQN(n_actions)
+        self.q_net =  ConvNetwork(obs_size, n_actions)
+        self.target_net = ConvNetwork(obs_size, n_actions)
         self.target_net.load_state_dict(self.q_net.state_dict())
 
         self.loss_function = nn.SmoothL1Loss()

@@ -1,3 +1,5 @@
+from collections import deque, namedtuple
+import random
 
 Transition = namedtuple(
     'Transition',
@@ -16,7 +18,8 @@ class ReplayBuffer:
         for _ in range(self.min_replay_size):
             action = env.action_space.sample()
 
-            next_state, reward, done, _ = env.step(action)
+            next_state, reward, terminated, truncated, _ = env.step(action)
+            done = terminated or truncated
             self.push(state, action, reward, next_state, done)
 
             state = next_state
