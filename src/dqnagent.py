@@ -26,6 +26,7 @@ class DQN:
             decrease_epsilon_factor,
             epsilon_min,
             learning_rate,
+            is_train=True
     ) -> None:
         self.env = env
         self.gamma = gamma
@@ -49,7 +50,7 @@ class DQN:
         else:
             print("CUDA not available, using CPU.")
 
-        self.reset()
+        self.reset(is_train)
 
     def get_action(self, state, is_eval=False):
         """
@@ -220,19 +221,20 @@ class DQN:
         )
 
 
-    def reset(self):
+    def reset(self, is_train=True):
         obs_size = self.env.observation_space.shape[0]
         n_actions = self.env.action_space.n
 
-        self.buffer = ReplayBuffer(self.buffer_capacity)
-        self.buffer.initialize(self.env)
-
         self.q_net =  ConvNetwork(obs_size, n_actions).to(self.device)
-        self.target_net = ConvNetwork(obs_size, n_actions).to(self.device)
-        self.target_net.load_state_dict(self.q_net.state_dict())
+        if is_train:
+            self.target_net = ConvNetwork(obs_size, n_actions).to(self.device)
+            self.target_net.load_state_dict(self.q_net.state_dict())
 
-        self.loss_function = nn.SmoothL1Loss().to(self.device)
-        self.optimizer = optim.Adam(params=self.q_net.parameters(), lr=self.learning_rate)
+            self.buffer = ReplayBuffer(self.buffer_capacity)
+            self.buffer.initialize(self.env)
+            
+            self.loss_function = nn.SmoothL1Loss().to(self.device)
+            self.optimizer = optim.Adam(params=self.q_net.parameters(), lr=self.learning_rate)
 
         self.epsilon = self.epsilon_start
         self.n_steps = 0
