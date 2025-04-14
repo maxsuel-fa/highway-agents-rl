@@ -277,8 +277,8 @@ class DQN:
         TODO
         """
         cp_path = os.path.join(checkpoint_dir, 'weights_epoch' + str(epoch) + '.pt')
-        checkpoint = torch.load(cp_path)
-
+        checkpoint = torch.load(cp_path, weights_only=False)
+        
         self.q_net.load_state_dict(checkpoint['q_net_state_dict'])
         
         if is_train:
