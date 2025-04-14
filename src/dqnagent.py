@@ -154,27 +154,24 @@ class DQN:
 
             self.n_eps += 1
             writer.add_scalar('train/episode_reward', episode_reward, self.n_eps)
-            if train_arguments.get('eval_every') and self.n_eps % train_arguments['eval_every'] == 0:
+
+            if train_arguments['eval_every'] and not self.n_eps % train_arguments['eval_every']:
                 self.q_net.eval()
                 eval_rewards = self.eval(train_arguments['eval_n_simulations'], train_arguments['eval_display'])
                 avg_eval = np.mean(eval_rewards)
                 writer.add_scalar('eval/avg_reward', avg_eval, self.n_eps)
-                print(f"Episode {self.n_eps}: Average evaluation reward: {avg_eval:.2f}")
+                print(f'Episode {self.n_eps}: Average evaluation reward: {avg_eval:.2f}')
+
+                if train_arguments['save_best'] and avg_eval > self.best_eval:
+                    self.best_eval = avg_eval
+                    self.save(train_arguments['save_dir'], 'best_model')
+                    print(f'Checkpoint saved at episode {self.n_eps} with best eval reward: {avg_eval:.2f}')
                 self.q_net.train()
 
-                # Checkpoint save (runs every save_every episodes) if eval improves
-                if train_arguments.get('save_every') and self.n_eps % train_arguments['save_every'] == 0:
-                    if avg_eval > self.best_eval:
-                        self.best_eval = avg_eval
-                        self.save(train_arguments['save_dir'], self.n_eps)
-                        print(f"Checkpoint saved at episode {self.n_eps} with best eval reward: {avg_eval:.2f}")
-                    else:
-                        print(f"No improvement over best eval reward {self.best_eval:.2f}.")
-            #deprecated
-            """ if (train_arguments['save_every']
-                and not self.n_eps % train_arguments['save_every']):
-                self.save(train_arguments['save_dir'], self.n_eps) """
+                if train_arguments['save_every'] and not self.n_eps % train_arguments['save_every']:
+                    self.save(train_arguments['save_dir'], self.n_eps)
 
+        self.save(train_arguments['save_dir'], 'last')
 
 
     def eval(self, n_simulations, display=False):

@@ -5,17 +5,17 @@ import torch
 from dqnagent import DQN
 
 
-env = make_env('./config/base_config.pkl')
+env = make_env('./config/simple_config.pkl')
 
 gamma = 0.8
 batch_size = 32
 buffer_capacity = 15000
-update_target_every = 1
+update_target_every = 100
 
-epsilon_start = 0.9
+epsilon_start = 0.1
 decrease_epsilon_factor = 1000
 epsilon_min = 0.05
-learning_rate = 5e-4
+learning_rate = 1e-3
 
 agent = DQN(
     env, 
@@ -30,12 +30,13 @@ agent = DQN(
 )
 
 train_args = {
-    'n_episodes': 40000,
-    'eval_every': 1,
-    'eval_n_simulations': 1,
-    'eval_display': False,
+    'n_episodes': 600,
+    'eval_every': 100,
+    'eval_n_simulations': 5,
+    'eval_display': True,
     'save_every': 100,
-    'save_dir': './weights'
+    'save_best': True,
+    'save_dir': './weights/simple-env'
 }
 
 agent.train(train_args)
