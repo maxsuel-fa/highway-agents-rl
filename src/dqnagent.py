@@ -252,15 +252,28 @@ class DQN:
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
-        save_path = 'weights_epoch' + str(epoch) + '.pt'
+        save_path = 'weights_epoch_' + str(epoch) + '.pt'
         save_path = os.path.join(save_dir, save_path)
+
+        rewards_t = torch.as_tensor(
+            np.asarray(self.train_results['rewards']), dtype=torch.float32
+        )
+        durations_t = torch.as_tensor(
+            np.asarray(self.train_results['durations']), dtype=torch.int64
+        )
+        losses_t = torch.as_tensor(
+            np.asarray(self.train_results['losses']), dtype=torch.float64
+        )
 
         torch.save(
             {
                 'q_net_state_dict': self.q_net.state_dict(),
                 'target_state_dict': self.target_net.state_dict(),
                 'optimizer_state_dict': self.optimizer.state_dict(),
-                'replay_buff_mem': self.buffer.memory
+                'replay_buff_mem': self.buffer.memory,
+                'rewards': rewards_t,
+                'durations': durations_t,
+                'losses': losses_t
             },
             save_path
         )
@@ -275,14 +288,15 @@ class DQN:
         """
         TODO
         """
-        cp_path = os.path.join(checkpoint_dir, 'weights_epoch' + str(epoch) + '.pt')
+        cp_path = os.path.join(checkpoint_dir, 'weights_epoch_' + str(epoch) + '.pt')
         checkpoint = torch.load(cp_path, weights_only=False)
         
         self.q_net.load_state_dict(checkpoint['q_net_state_dict'])
-        
         if is_train:
             self.target_net.load_state_dict(checkpoint['target_state_dict'])
             self.buffer.memory = checkpoint['replay_buff_mem']
+
+        return checkpoint
 
 
 
