@@ -1,4 +1,4 @@
-from networks import PolicyNetwork
+from networks import ConvPolicyNetwork
 
 from copy import deepcopy
 import itertools
@@ -53,19 +53,20 @@ class REINFORCE:
         done = False
 
         while not done:
+            #state = np.concatenate((state['observation'], state['desired_goal']))
             with torch.no_grad():
-                action = self.pi(state['observation']).sample()
+                action = self.pi(state).sample()
                 action = action.squeeze(0).cpu().numpy()
             
             next_state, reward, terminated, truncated, _ = self.env.step(action)
-
-            states.append(state['observation'])
+            
+            states.append(state)
             actions.append(action)
             rewards.append(reward)
 
             state = next_state
             done = terminated or truncated
-
+        print(rewards)
         return {
             'states': np.asarray(states),
             'actions': np.asarray(actions),
@@ -80,55 +81,70 @@ class REINFORCE:
         state_t = torch.as_tensor(state, device=self.device)
         state_t = state_t.unsqueeze(0)
         
-        distribution_params = self.policy_net(state_t)
+        mu, log_sigma = self.policy_net(state_t).values()
 
-        mu = distribution_params['mu']
-        log_sigma = distribution_params['log_sigma']
-        sigma = torch.exp(log_sigma.squeeze(0))
-        
-        pi = torch.distributions.MultivariateNormal(mu, torch.diag(sigma))
+        sigma = torch.exp(log_sigma)
+        pi = torch.distributions.Normal(mu, sigma)
 
         return pi
+    
+    def compute_returns(self, rewards):
+        returns = []
+        R = 0
+        for r in reversed(rewards):
+            R = r + self.gamma * R
+            returns.insert(0, R)
+
+        returns = torch.tensor(returns, dtype=torch.float32)
+        returns = (returns - returns.mean()) / (returns.std() + 1e-9)
+    
+        return returns
 
 
     def update(self):
         """
         TODO
         """
-        curr_episode = self.full_episode()
-        curr_episode['losses'] = []
+        policy_loss = []
+        all_rewards = np.asarray([])
+        all_durations = np.asarray([])
 
-        T = curr_episode['states'].shape[0]
-        gamma_seq = np.asarray([self.gamma ** t for t in range(T)])
-        rewards = curr_episode['rewards']
+        for _ in range(self.batch_size):
+            curr_episode = self.full_episode()
 
-        for t in range(T):
-            return_g = np.multiply(gamma_seq, rewards).sum(axis=0)
-            
-            gamma_seq = gamma_seq[t + 1:] * (1. / (self.gamma ** t))
-            rewards = rewards[t + 1:]
+            T = curr_episode['states'].shape[0]
+            rewards = curr_episode['rewards']
+            returns = self.compute_returns(rewards)
+         
+            for t in range(T):
+                G = returns[t]
 
-            state = curr_episode['states'][t]
-            action = torch.as_tensor(curr_episode['actions'][t], device=self.device)
-            log_prob = self.pi(state).log_prob(action)
-            negative_loss = -(self.gamma ** t) * return_g * log_prob
+                state = curr_episode['states'][t]
+                action = torch.as_tensor(curr_episode['actions'][t], device=self.device)
+                log_prob = self.pi(state).log_prob(action).sum()
+                policy_loss.append(-G * log_prob)
 
-            self.optimizer.zero_grad()
-            negative_loss.backward()
-            self.optimizer.step()
+            all_rewards = np.concatenate((all_rewards, rewards))
+            all_durations = np.append(all_durations, T)
 
-            curr_episode['losses'].append(-negative_loss.item())
+        policy_loss = torch.stack(policy_loss).sum()
+        self.optimizer.zero_grad()
+        policy_loss.backward()
+        self.optimizer.step()
 
-        curr_episode['duration'] = T
-
-        return curr_episode
+        
+        return {
+            'rewards': all_rewards,
+            'durations': all_durations,
+            'loss': -policy_loss.item()
+        }
 
 
     def reset(self, is_train=True):
-        obs_size = self.env.observation_space['observation'].shape[0]
+        obs_size = self.env.observation_space.shape[0]
         action_size = self.env.action_space.shape[0]
 
-        self.policy_net =  PolicyNetwork(obs_size, action_size).to(self.device)
+        self.policy_net =  ConvPolicyNetwork(obs_size, action_size).to(self.device)
         if is_train:
             self.optimizer = optim.Adam(params=self.policy_net.parameters(), lr=self.learning_rate)
 
@@ -201,13 +217,13 @@ class REINFORCE:
         for episode in trange(train_arguments['n_episodes'], desc="Training Episodes"):
             curr_episode = self.update()
 
-            self.train_results['durations'] = np.append(
-                self.train_results['durations'], curr_episode['duration']
+            self.train_results['durations'] = np.concatenate(
+                (self.train_results['durations'], curr_episode['durations'])
             )
             self.train_results['rewards'] = np.concatenate(
                 (self.train_results['rewards'], curr_episode['rewards'])
             )
-            self.train_results['losses'].extend(curr_episode['losses'])
+            self.train_results['losses'].append(curr_episode['loss'])
             
             self.n_eps += 1
             #writer.add_scalar('train/episode_reward', episode_reward, self.n_eps)
@@ -245,7 +261,8 @@ class REINFORCE:
             sim_reward = 0.0
 
             for t in itertools.count():
-                action = self.pi(state['observation']).sample()
+                #state = np.concatenate((state['observation'], state['desired_goal']))
+                action = self.pi(state).sample()
                 action = action.squeeze(0).cpu().numpy()
                 state, reward, terminated, truncated, _ = eval_env.step(action)
                 sim_reward += reward
@@ -263,3 +280,4 @@ class REINFORCE:
             'rewards': eval_rewards,
             'durations': eval_durations
         }
+
