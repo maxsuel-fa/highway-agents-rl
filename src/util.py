@@ -2,11 +2,6 @@ import gymnasium as gym
 from itertools import count
 import matplotlib
 import matplotlib.pyplot as plt
-# set up matplotlib
-is_ipython = 'inline' in matplotlib.get_backend()
-if is_ipython:
-    from IPython import display
-plt.ion()
 
 import pickle
 import torch
@@ -113,18 +108,20 @@ def make_env(config_path):
     return env
 
 
-def plot_durations(episode_durations):
+def plot_durations(episode_durations, y_label='Duration', win=100):
     plt.figure(1)
     durations_t = torch.tensor(episode_durations, dtype=torch.float)
     plt.title('Result')
     plt.xlabel('Episode')
-    plt.ylabel('Duration')
+    plt.ylabel(y_label)
     plt.plot(durations_t.numpy())
-    # Take 100 episode averages and plot them too
-    if len(durations_t) >= 100:
-        means = durations_t.unfold(0, 100, 1).mean(1).view(-1)
-        means = torch.cat((torch.zeros(99), means))
-        plt.plot(means.numpy())
+    
+    if len(durations_t) >= win:
+        means = durations_t.unfold(0, win, 1).mean(1).view(-1)
+        means = torch.cat((torch.zeros(win - 1), means))
+        plt.plot(means.numpy(), label= f'Moving Average (Window = {win})')
+    plt.legend()
+    plt.show()
 
 
 def save_checkpoint(agent, filename, extra_info=None):

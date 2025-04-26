@@ -4,18 +4,16 @@ import highway_env
 import torch
 from dqnagent import DQN
 
-
-env = make_env('./config/simple_config.pkl')
-
+env = make_env('./config/base_config.pkl')
 gamma = 0.8
 batch_size = 32
 buffer_capacity = 15000
 update_target_every = 100
 
-epsilon_start = 0.1
-decrease_epsilon_factor = 1000
+epsilon_start = 0.9
+decrease_epsilon_factor = 1000 
 epsilon_min = 0.05
-learning_rate = 1e-3
+learning_rate = 5e-4
 
 agent = DQN(
     env, 
@@ -30,13 +28,17 @@ agent = DQN(
 )
 
 train_args = {
-    'n_episodes': 600,
+    'n_episodes': 2000,
+    'start_ep': 0,
     'eval_every': 100,
-    'eval_n_simulations': 5,
+    'eval_n_simulations': 10,
     'eval_display': True,
     'save_every': 100,
     'save_best': True,
-    'save_dir': './weights/simple-env'
+    'save_dir': './weights/base-env-new-lr-4'
 }
 
+#cp = './weights/base-env-new-lr'
+if train_args['start_ep']:
+    agent.load(cp, train_args['start_ep'] - 1, True)
 agent.train(train_args)

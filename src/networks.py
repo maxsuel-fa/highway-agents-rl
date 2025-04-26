@@ -94,3 +94,42 @@ class PolicyNetwork(nn.Module):
             'mu': mu,
             'log_sigma': log_sigma
         }
+
+
+class ConvPolicyNetwork(nn.Module):
+    """
+    TODO
+    """
+    def __init__(
+            self, 
+            observation_size: int, 
+            action_size: int, 
+            hidden_dim: int = 128,
+    ) -> None:
+        """
+        TODO
+        """
+        super(ConvPolicyNetwork, self).__init__()
+        self.conv1 = nn.Conv2d(observation_size, 32, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
+        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
+
+        self.fc1 = nn.Linear(64 * 12 * 12, 512)
+        self.mu = nn.Linear(512, action_size)
+        self.log_sigma = nn.Linear(512, action_size)
+
+    def forward(self, x):
+        # x: [B, 7, 8, 8]
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = F.relu(self.conv3(x))
+        x = x.view(x.size(0), -1)  # flatten: [B, 64*8*8]
+        x = F.relu(self.fc1(x))
+
+        mu = self.mu(x)
+        log_sigma = self.log_sigma(x)
+
+        return {
+            'mu': mu,
+            'log_sigma': log_sigma
+        }

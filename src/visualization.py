@@ -1,11 +1,15 @@
-import gymnasium as gym 
+import gymnasium as gym
+import numpy as np
 from util import *
 import highway_env
+from gymnasium.wrappers import RecordVideo
 import torch
 from dqnagent import DQN
 
 
 env = make_env('./config/base_config.pkl')
+env = RecordVideo(env, video_folder="./videos",
+              episode_trigger=lambda e: True)
 
 gamma = 0.8
 batch_size = 32
@@ -30,5 +34,15 @@ agent = DQN(
     is_train=False
 )
 
-agent.load('./weights', 600)
-print(agent.eval(10, True))
+weights = './weights/base-env-new-lr-4'
+checkpoint = agent.load(weights, 'last')
+plot_durations(checkpoint['rewards'], 'Episode Reward', 100)
+plot_durations(checkpoint['durations'], 'Episode Duration', 100)
+
+eval_result = agent.eval(1, True)
+
+eval_reward = np.asarray(eval_result['rewards'])
+eval_duration = np.asarray(eval_result['durations'])
+
+print(f'Reward: {eval_reward.mean()} +- {eval_reward.std()}')
+print(f'Duration: {eval_duration.mean()} +- {eval_duration.std()}')

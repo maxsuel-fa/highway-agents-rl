@@ -117,7 +117,6 @@ class DQN:
         self.optimizer.step()
 
         self.n_steps += 1
-        self.decrease_epsilon()
 
         if not self.n_steps % self.update_target_every:
             self.target_net.load_state_dict(self.q_net.state_dict())
@@ -131,7 +130,9 @@ class DQN:
         self.train_results['rewards'] = []
         self.train_results['losses'] = []
         
-        for episode in trange(train_arguments['n_episodes'], desc="Training Episodes"):
+        start = train_arguments['start_ep']
+        end = start + train_arguments['n_episodes'] - 1
+        for episode in trange(start, end, desc="Training Episodes"):
             state, _ = self.env.reset()
             episode_reward = 0.0
 
@@ -153,11 +154,14 @@ class DQN:
                     break
 
             self.n_eps += 1
+            print(self.epsilon)
+            self.decrease_epsilon()
             writer.add_scalar('train/episode_reward', episode_reward, self.n_eps)
 
             if train_arguments['eval_every'] and not self.n_eps % train_arguments['eval_every']:
                 self.q_net.eval()
-                eval_rewards = self.eval(train_arguments['eval_n_simulations'], train_arguments['eval_display'])
+                eval_results = self.eval(train_arguments['eval_n_simulations'], train_arguments['eval_display'])
+                eval_rewards = eval_results['rewards']
                 avg_eval = np.mean(eval_rewards)
                 writer.add_scalar('eval/avg_reward', avg_eval, self.n_eps)
                 print(f'Episode {self.n_eps}: Average evaluation reward: {avg_eval:.2f}')
@@ -180,6 +184,7 @@ class DQN:
         """
         eval_env = deepcopy(self.env)
         eval_rewards = []
+        eval_durations = []
 
         for simulation in range(n_simulations):
             state, _ = eval_env.reset()
@@ -196,9 +201,15 @@ class DQN:
                 done = terminated or truncated
                 if done:
                     eval_rewards.append(sim_reward)
+                    eval_durations.append(t + 1)
                     break
+            
+            eval_env.close()
 
-        return eval_rewards
+        return {
+            'rewards': eval_rewards,
+            'durations': eval_durations
+        }
 
 
     def get_q(self, state):
@@ -213,7 +224,7 @@ class DQN:
 
     def decrease_epsilon(self):
         self.epsilon = np.interp(
-            self.n_steps, [0, self.decrease_epsilon_factor], 
+            self.n_eps, [0, self.decrease_epsilon_factor], 
             [self.epsilon_start, self.epsilon_min]
         )
 
