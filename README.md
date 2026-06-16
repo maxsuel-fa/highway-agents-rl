@@ -1,7 +1,3 @@
 # highway-agents-rl
 
-## Team Members
-  - Fernandes de Almeida Maxsuel
-  - Goto Mateus
-  - Regazzi João Pedro
-
+Education project where the goal is to apply Reinforcement Learning to teach agents to drive in a highway.
